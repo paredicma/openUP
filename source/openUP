@@ -1,0 +1,122 @@
+#!/bin/sh
+#
+# openUP Bu script openUP.py programini baslatmak icin olusturulmustur.
+#               server.
+#
+# chkconfig: - 64 36
+# description: database cluster kontrol yazilimi.
+# processname: openUP.py
+# pidfile: /var/run/pgTCKK.pid
+
+# Versiyon 4.0  Tek network ile calisan versiyondur.
+
+# Source function library.
+INITD=/etc/rc.d/init.d
+. $INITD/functions
+
+# Get function listing for cross-distribution logic.
+TYPESET=`typeset -f|grep "declare"`
+
+# Get network config.
+. /etc/sysconfig/network
+
+# Find the name of the script
+NAME=`basename $0`
+if [ ${NAME:0:1} = "S" -o ${NAME:0:1} = "K" ]
+then
+        NAME=${NAME:3}
+fi
+
+# For SELinux we need to use 'runuser' not 'su'
+if [ -x /sbin/runuser ]
+then
+    SU=runuser
+else
+    SU=su
+fi
+
+
+# Set defaults for configuration variables
+HAENGINE=/etc/openUP
+lockfile="/var/lock/subsys/openUP.lock"
+pidfile="/var/run/openUP.pid"
+
+[ -f "$HAENGINE/openUP.py" ] || exit 1
+
+script_result=0
+
+start(){
+        if [ -f "$pidfile" ]
+        then
+                echo "already started..."
+                exit 5
+        else
+
+                HA_CONTROL_START=$"Starting ${NAME} service: "
+                echo -n "$HA_CONTROL_START"
+                python $HAENGINE/openUP.py start & > /dev/null
+                sleep 2
+                pid='head -n 1 "$pidfile" 2 > /dev/null'
+                if [ "x$pid" != x ]
+                then
+                        success "$HA_CONTROL_START"
+                        touch "$lockfile"
+#                        echo $pid > "$pidfile"
+                        echo
+                else
+                        failure "$HA_CONTROL_START"
+                        echo
+                        script_result=1
+                fi
+        fi
+}
+
+stop(){
+        echo -n $"Stopping ${NAME} service: "
+        if [ -e "$lockfile" ]
+        then
+                python $HAENGINE/openUP.py stop  > /dev/null
+                ret=$?
+                if [ $ret -eq 0 ]
+                then
+                        echo_success
+                        rm -f "$pidfile"
+                        rm -f "$lockfile"
+                else
+                        echo_failure
+                        script_result=1
+                fi
+                else
+                        # not running; per LSB standards this is "ok"
+                        echo_success
+                fi
+                echo
+}
+
+restart(){
+    stop
+    start
+}
+
+
+# See how we were called.
+case "$1" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  status)
+        status -p "$pidfile"
+        script_result=$?
+        ;;
+  restart)
+        restart
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|status|restart}"
+        exit 2
+esac
+
+exit $script_result
